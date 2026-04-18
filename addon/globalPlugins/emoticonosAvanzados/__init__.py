@@ -350,8 +350,13 @@ def _reemplazarTextoParaBraille(texto):
 	en lugar de caracteres Unicode que no se representan en Braille.
 
 	Devuelve una tupla (nuevo_texto, mapa_posiciones) donde mapa_posiciones
-	es una lista que mapea cada posición del texto original a su posición
-	correspondiente en el texto nuevo, para poder ajustar el cursor.
+	es una lista que mapea cada posición del texto original (0..len) a su
+	posición correspondiente en el texto nuevo, para poder ajustar el cursor.
+
+	La política de mapeo es:
+	- Posiciones en texto normal: se mapean 1:1 con el nuevo texto.
+	- Posiciones dentro de un emoji: se mapean al final de la descripción
+	  (el cursor "salta" la descripción completa).
 
 	:param texto: Texto original con posibles emoticonos.
 	:type texto: str
@@ -376,22 +381,23 @@ def _reemplazarTextoParaBraille(texto):
 		if not resultados:
 			return texto, None
 
-		# Construir el texto nuevo y el mapa de posiciones
-		# mapa_posiciones[i] = posición en texto_nuevo correspondiente a la posición i del texto original
+		# Construir el texto nuevo y el mapa de posiciones.
+		# mapa tiene len(texto)+1 entradas: una por cada posición de carácter
+		# más una para la posición "después del último carácter" (cursor al final).
 		mapa = [0] * (len(texto) + 1)
 		partes = []
 		ultimo = 0
 		pos_nueva = 0
 
 		for item in resultados:
-			# Texto antes del emoji: se copia tal cual
+			# Texto antes del emoji: se copia tal cual, mapeo 1:1
 			segmento_antes = texto[ultimo:item["inicio"]]
 			partes.append(segmento_antes)
 			for k in range(ultimo, item["inicio"]):
 				mapa[k] = pos_nueva
 				pos_nueva += 1
 
-			# Reemplazo del emoji
+			# Construir el reemplazo del emoji
 			if modo == MODO_ELIMINADO:
 				reemplazo = " "
 			else:
@@ -399,8 +405,12 @@ def _reemplazarTextoParaBraille(texto):
 				reemplazo = " " + descripcion + " "
 			partes.append(reemplazo)
 
-			# Todas las posiciones del emoji original apuntan al final del reemplazo
+			# Calcular dónde termina el reemplazo
 			pos_fin_reemplazo = pos_nueva + len(reemplazo)
+
+			# Las posiciones dentro del emoji saltan al final de la descripción.
+			# Esto hace que el cursor Braille "salte" la descripción completa
+			# y aparezca en el primer carácter después de ella.
 			for k in range(item["inicio"], item["fin"]):
 				mapa[k] = pos_fin_reemplazo
 			pos_nueva = pos_fin_reemplazo
@@ -413,7 +423,7 @@ def _reemplazarTextoParaBraille(texto):
 		for k in range(ultimo, len(texto)):
 			mapa[k] = pos_nueva
 			pos_nueva += 1
-		# Posición final (longitud del texto)
+		# Posición final (cursor al final del texto)
 		mapa[len(texto)] = pos_nueva
 
 		return "".join(partes), mapa
@@ -430,9 +440,9 @@ def _parcheado_braille_update(self):
 	emojis Unicode por sus descripciones textuales antes de la
 	traducción a celdas Braille.
 
-	Calcula un mapa de posiciones para ajustar correctamente el cursor
-	y la selección tras el reemplazo, evitando que el cursor se quede
-	atascado en la posición del emoji original.
+	El cursor Braille "salta" las descripciones de emojis: cuando el
+	cursor de edición está sobre un emoji, el cursor Braille se posiciona
+	al final de la descripción en lugar de dentro de ella.
 	"""
 	try:
 		modo = config.conf["emoticonosAvanzados"]["modo"]
@@ -441,29 +451,41 @@ def _parcheado_braille_update(self):
 			nuevo_texto, mapa = _reemplazarTextoParaBraille(self.rawText)
 			if nuevo_texto != self.rawText:
 				texto_original_len = len(self.rawText)
+				nuevo_len = len(nuevo_texto)
 				self.rawText = nuevo_texto
 				# Limpiar typeforms ya que el texto ha cambiado de longitud
 				self.rawTextTypeforms = None
 				# Ajustar posición del cursor usando el mapa de posiciones
 				if self.cursorPos is not None:
 					if mapa is not None and self.cursorPos <= texto_original_len:
-						self.cursorPos = mapa[min(self.cursorPos, texto_original_len)]
-					elif len(self.rawText) > 0:
-						self.cursorPos = min(self.cursorPos, len(self.rawText) - 1)
+						pos_mapeada = mapa[min(self.cursorPos, texto_original_len)]
+					else:
+						pos_mapeada = self.cursorPos
+					# Clampar al rango válido del nuevo texto
+					if nuevo_len > 0:
+						self.cursorPos = max(0, min(pos_mapeada, nuevo_len - 1))
 					else:
 						self.cursorPos = None
 				# Ajustar selección usando el mapa de posiciones
 				if self.selectionStart is not None:
 					if mapa is not None and self.selectionStart <= texto_original_len:
-						self.selectionStart = mapa[min(self.selectionStart, texto_original_len)]
-					elif self.selectionStart >= len(self.rawText):
+						pos_s = mapa[min(self.selectionStart, texto_original_len)]
+					else:
+						pos_s = self.selectionStart
+					if nuevo_len > 0:
+						self.selectionStart = max(0, min(pos_s, nuevo_len - 1))
+					else:
 						self.selectionStart = None
 						self.selectionEnd = None
 				if self.selectionEnd is not None:
 					if mapa is not None and self.selectionEnd <= texto_original_len:
-						self.selectionEnd = mapa[min(self.selectionEnd, texto_original_len)]
-					elif self.selectionEnd > len(self.rawText):
-						self.selectionEnd = len(self.rawText)
+						pos_e = mapa[min(self.selectionEnd, texto_original_len)]
+					else:
+						pos_e = self.selectionEnd
+					if nuevo_len > 0:
+						self.selectionEnd = max(0, min(pos_e, nuevo_len))
+					else:
+						self.selectionEnd = None
 	except Exception:
 		pass
 	_original_braille_update(self)

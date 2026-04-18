@@ -4,7 +4,7 @@
 
 Emoticonos Avanzados es un complemento para el lector de pantallas NVDA que te permite controlar cómo se leen los emojis (😀❤️🚀) y los emoticonos clásicos (:) ;D XD) mientras navegas por aplicaciones, páginas web, chats y documentos.
 
-Utiliza los diccionarios CLDR (Common Locale Data Repository) de NVDA para ofrecer más de 4000 descripciones de emojis en español.
+Utiliza los diccionarios CLDR (Common Locale Data Repository) de NVDA para ofrecer más de 3900 descripciones de emojis en español.
 
 Con este complemento puedes:
 
@@ -138,7 +138,7 @@ Niveles disponibles:
 
 Son los emojis gráficos estándar que se usan en todas las aplicaciones y sistemas operativos. Ejemplos: 😀 😂 ❤️ 👍 🎉 🚀 🌈 🐱 🍕 ⚡
 
-El complemento detecta más de 4000 emojis Unicode con descripciones en español provenientes del diccionario CLDR de NVDA, incluyendo emojis con modificadores de tono de piel y secuencias compuestas.
+El complemento detecta más de 3900 emojis Unicode con descripciones en español provenientes del diccionario CLDR de NVDA, incluyendo emojis con modificadores de tono de piel y secuencias compuestas.
 
 ### Emoticonos clásicos
 

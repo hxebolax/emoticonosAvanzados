@@ -4,7 +4,7 @@
 
 ### Novedades
 
-* **Descripciones CLDR nativas**: El complemento ahora utiliza los diccionarios CLDR (Common Locale Data Repository) de NVDA en español para las descripciones de emojis. Esto proporciona **más de 4000 descripciones** oficiales en español, incluyendo emojis con modificadores de tono de piel, secuencias ZWJ y emojis compuestos.
+* **Descripciones CLDR nativas**: El complemento ahora utiliza los diccionarios CLDR (Common Locale Data Repository) de NVDA en español para las descripciones de emojis. Esto proporciona **más de 3900 descripciones** oficiales en español, incluyendo emojis con modificadores de tono de piel, secuencias ZWJ y emojis compuestos. Se excluyen deliberadamente símbolos tipográficos (puntuación, monedas, flechas, comillas especiales) que NVDA ya maneja de forma nativa.
 * **Script de importación**: Nuevo script `importar_diccionarios.py` que permite regenerar automáticamente el diccionario de emojis desde los archivos `cldr.dic` de NVDA.
 
 ### Correcciones

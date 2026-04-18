@@ -307,17 +307,21 @@ def parsear_symbols(ruta):
 
 def filtrar_solo_emojis(diccionario):
 	"""
-	Filtra un diccionario para incluir solo emojis y símbolos especiales,
-	excluyendo caracteres ASCII básicos, puntuación, Braille, etc.
+	Filtra un diccionario para incluir solo emojis Unicode reales,
+	excluyendo símbolos tipográficos, puntuación, monedas, flechas, etc.
+	que NVDA ya maneja de forma nativa con sus propios diccionarios de símbolos.
+
+	Esto es crucial porque incluir símbolos no-emoji en el diccionario de habla
+	rompe la lectura por palabras en aplicaciones web.
 
 	:param diccionario: Diccionario completo de símbolo → descripción.
 	:type diccionario: dict
-	:return: Diccionario filtrado.
+	:return: Diccionario filtrado solo con emojis.
 	:rtype: dict
 	"""
 	filtrado = {}
 	for simbolo, descripcion in diccionario.items():
-		if es_emoji_o_simbolo_especial(simbolo):
+		if es_emoji_unicode(simbolo):
 			filtrado[simbolo] = descripcion
 	return filtrado
 

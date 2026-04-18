@@ -23,7 +23,7 @@ addon_info = AddonInfo(
 	addon_description=_(
 		"""Complemento avanzado para la detección y anuncio de emojis Unicode y emoticonos clásicos.
 Permite configurar cómo NVDA anuncia los emoticonos: uno por uno, agrupando repetidos o eliminándolos del habla.
-Utiliza los diccionarios CLDR de NVDA para una detección exhaustiva con más de 4000 descripciones en español."""
+Utiliza los diccionarios CLDR de NVDA para una detección exhaustiva con más de 3900 descripciones en español."""
 	),
 	addon_version="1.3.1",
 	# Translators: Registro de cambios del complemento.
