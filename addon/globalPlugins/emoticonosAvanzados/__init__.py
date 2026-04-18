@@ -7,13 +7,11 @@
 Complemento EmoticonosAvanzados para NVDA.
 
 Proporciona detección avanzada de emojis Unicode y emoticonos clásicos
-utilizando las librerías emoji y emot. Permite configurar cómo NVDA
+utilizando los diccionarios CLDR de NVDA. Permite configurar cómo NVDA
 anuncia los emoticonos: uno por uno, agrupados o eliminados del habla.
 """
 
-import os
 import re
-import sys
 import wx
 
 import globalPluginHandler
@@ -25,6 +23,7 @@ import ui
 import characterProcessing
 import languageHandler
 import speech
+import braille
 import textInfos
 import gui
 import addonHandler
@@ -33,19 +32,8 @@ from gui.settingsDialogs import NVDASettingsDialog, SettingsPanel
 from scriptHandler import script
 from logHandler import log
 
-# Añadir la carpeta de librerías empaquetadas al path temporalmente
-_libsPath = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "libs")
-_libsPathAgregado = False
-if os.path.isdir(_libsPath) and _libsPath not in sys.path:
-	sys.path.insert(0, _libsPath)
-	_libsPathAgregado = True
-
 from .motor import MotorEmoticonos
 from .traducciones import EMOTICONOS_MANUALES
-
-# Limpiar sys.path: ya no necesitamos la ruta una vez importados los módulos
-if _libsPathAgregado and _libsPath in sys.path:
-	sys.path.remove(_libsPath)
 
 addonHandler.initTranslation()
 
@@ -73,12 +61,10 @@ confspec = {
 	"suprimirSimbolosNVDA": "boolean(default=False)",
 	"formatoDescripcion": 'string(default="[{}]")',
 	"ignorarMayusculas": "boolean(default=True)",
-	"usarLibreriaEmoji": "boolean(default=True)",
-	"usarLibreriaEmot": "boolean(default=True)",
-	"usarTraduccionesManual": "boolean(default=True)",
 	"prefijo": 'string(default="")',
 	"separadorAgrupado": 'string(default=", ")',
 	"nivelLog": "integer(default=0)",
+	"mostrarEnBraille": "boolean(default=False)",
 }
 config.conf.spec["emoticonosAvanzados"] = confspec
 
@@ -88,6 +74,8 @@ _motor = None
 _dicHabla = speechDictHandler.SpeechDict()
 # Estado del filtro de habla
 _filtroRegistrado = False
+# Referencia al método original de braille.Region.update para monkey-patching
+_original_braille_update = None
 
 
 def _log(mensaje, nivel=LOG_INFO):
@@ -130,9 +118,6 @@ def _obtenerMotor():
 	if _motor is None:
 		_motor = MotorEmoticonos(
 			ignorar_mayusculas=config.conf["emoticonosAvanzados"]["ignorarMayusculas"],
-			usar_emoji=config.conf["emoticonosAvanzados"]["usarLibreriaEmoji"],
-			usar_emot=config.conf["emoticonosAvanzados"]["usarLibreriaEmot"],
-			usar_manual=config.conf["emoticonosAvanzados"]["usarTraduccionesManual"],
 		)
 	return _motor
 
@@ -144,9 +129,6 @@ def _recargarMotor():
 	global _motor
 	_motor = MotorEmoticonos(
 		ignorar_mayusculas=config.conf["emoticonosAvanzados"]["ignorarMayusculas"],
-		usar_emoji=config.conf["emoticonosAvanzados"]["usarLibreriaEmoji"],
-		usar_emot=config.conf["emoticonosAvanzados"]["usarLibreriaEmot"],
-		usar_manual=config.conf["emoticonosAvanzados"]["usarTraduccionesManual"],
 	)
 	_log("Motor recargado con configuración actualizada.", LOG_DEBUG)
 
@@ -359,6 +341,161 @@ def _desactivarAnuncio():
 		_filtroRegistrado = False
 
 
+def _reemplazarTextoParaBraille(texto):
+	"""
+	Reemplaza emojis y emoticonos en el texto para su presentación en línea Braille.
+
+	Detecta emoticonos en el texto y los sustituye por sus descripciones
+	textuales, de forma que la línea Braille muestre información legible
+	en lugar de caracteres Unicode que no se representan en Braille.
+
+	Devuelve una tupla (nuevo_texto, mapa_posiciones) donde mapa_posiciones
+	es una lista que mapea cada posición del texto original a su posición
+	correspondiente en el texto nuevo, para poder ajustar el cursor.
+
+	:param texto: Texto original con posibles emoticonos.
+	:type texto: str
+	:return: Tupla (texto_nuevo, mapa_posiciones).
+	:rtype: tuple
+	"""
+	if not texto or not texto.strip():
+		return texto, None
+
+	try:
+		motor = _obtenerMotor()
+		modo = config.conf["emoticonosAvanzados"]["modo"]
+		formato = config.conf["emoticonosAvanzados"]["formatoDescripcion"]
+		prefijo = config.conf["emoticonosAvanzados"]["prefijo"]
+		texto_prefijo = prefijo + " " if prefijo else ""
+
+		if modo == MODO_AGRUPADO:
+			nuevo = motor.generar_texto_agrupado(texto, formato=texto_prefijo + formato)
+			return nuevo, None
+
+		resultados = motor.detectar_todo(texto)
+		if not resultados:
+			return texto, None
+
+		# Construir el texto nuevo y el mapa de posiciones
+		# mapa_posiciones[i] = posición en texto_nuevo correspondiente a la posición i del texto original
+		mapa = [0] * (len(texto) + 1)
+		partes = []
+		ultimo = 0
+		pos_nueva = 0
+
+		for item in resultados:
+			# Texto antes del emoji: se copia tal cual
+			segmento_antes = texto[ultimo:item["inicio"]]
+			partes.append(segmento_antes)
+			for k in range(ultimo, item["inicio"]):
+				mapa[k] = pos_nueva
+				pos_nueva += 1
+
+			# Reemplazo del emoji
+			if modo == MODO_ELIMINADO:
+				reemplazo = " "
+			else:
+				descripcion = texto_prefijo + formato.format(item["descripcion"])
+				reemplazo = " " + descripcion + " "
+			partes.append(reemplazo)
+
+			# Todas las posiciones del emoji original apuntan al final del reemplazo
+			pos_fin_reemplazo = pos_nueva + len(reemplazo)
+			for k in range(item["inicio"], item["fin"]):
+				mapa[k] = pos_fin_reemplazo
+			pos_nueva = pos_fin_reemplazo
+
+			ultimo = item["fin"]
+
+		# Texto restante después del último emoji
+		segmento_final = texto[ultimo:]
+		partes.append(segmento_final)
+		for k in range(ultimo, len(texto)):
+			mapa[k] = pos_nueva
+			pos_nueva += 1
+		# Posición final (longitud del texto)
+		mapa[len(texto)] = pos_nueva
+
+		return "".join(partes), mapa
+	except Exception as e:
+		_log("Error al reemplazar texto para Braille: %s" % str(e), LOG_DEBUG)
+		return texto, None
+
+
+def _parcheado_braille_update(self):
+	"""
+	Versión parcheada de braille.Region.update para mostrar descripciones en Braille.
+
+	Intercepta la actualización de regiones Braille para reemplazar
+	emojis Unicode por sus descripciones textuales antes de la
+	traducción a celdas Braille.
+
+	Calcula un mapa de posiciones para ajustar correctamente el cursor
+	y la selección tras el reemplazo, evitando que el cursor se quede
+	atascado en la posición del emoji original.
+	"""
+	try:
+		modo = config.conf["emoticonosAvanzados"]["modo"]
+		mostrar = config.conf["emoticonosAvanzados"]["mostrarEnBraille"]
+		if modo != MODO_DESACTIVADO and mostrar and self.rawText:
+			nuevo_texto, mapa = _reemplazarTextoParaBraille(self.rawText)
+			if nuevo_texto != self.rawText:
+				texto_original_len = len(self.rawText)
+				self.rawText = nuevo_texto
+				# Limpiar typeforms ya que el texto ha cambiado de longitud
+				self.rawTextTypeforms = None
+				# Ajustar posición del cursor usando el mapa de posiciones
+				if self.cursorPos is not None:
+					if mapa is not None and self.cursorPos <= texto_original_len:
+						self.cursorPos = mapa[min(self.cursorPos, texto_original_len)]
+					elif len(self.rawText) > 0:
+						self.cursorPos = min(self.cursorPos, len(self.rawText) - 1)
+					else:
+						self.cursorPos = None
+				# Ajustar selección usando el mapa de posiciones
+				if self.selectionStart is not None:
+					if mapa is not None and self.selectionStart <= texto_original_len:
+						self.selectionStart = mapa[min(self.selectionStart, texto_original_len)]
+					elif self.selectionStart >= len(self.rawText):
+						self.selectionStart = None
+						self.selectionEnd = None
+				if self.selectionEnd is not None:
+					if mapa is not None and self.selectionEnd <= texto_original_len:
+						self.selectionEnd = mapa[min(self.selectionEnd, texto_original_len)]
+					elif self.selectionEnd > len(self.rawText):
+						self.selectionEnd = len(self.rawText)
+	except Exception:
+		pass
+	_original_braille_update(self)
+
+
+def _instalarParcheBraille():
+	"""
+	Instala el monkey-patch en braille.Region.update.
+
+	Guarda una referencia al método original y lo reemplaza
+	por la versión parcheada que procesa emoticonos para Braille.
+	"""
+	global _original_braille_update
+	if _original_braille_update is None:
+		_original_braille_update = braille.Region.update
+		braille.Region.update = _parcheado_braille_update
+		_log("Parche de Braille instalado.", LOG_DEBUG)
+
+
+def _desinstalarParcheBraille():
+	"""
+	Desinstala el monkey-patch de braille.Region.update.
+
+	Restaura el método original de actualización de regiones Braille.
+	"""
+	global _original_braille_update
+	if _original_braille_update is not None:
+		braille.Region.update = _original_braille_update
+		_original_braille_update = None
+		_log("Parche de Braille desinstalado.", LOG_DEBUG)
+
+
 def deshabilitarEnModoSeguro(claseDecorada):
 	"""
 	Decorador que deshabilita el complemento en modo seguro de NVDA.
@@ -420,6 +557,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Registrar cambio de perfil
 		config.post_configProfileSwitch.register(self.alCambiarPerfil)
 
+		# Instalar parche de Braille
+		_instalarParcheBraille()
+
 	def terminate(self):
 		"""
 		Finaliza el complemento limpiando recursos.
@@ -430,6 +570,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception:
 			pass
 		_desactivarAnuncio()
+		_desinstalarParcheBraille()
 		try:
 			config.post_configProfileSwitch.unregister(self.alCambiarPerfil)
 		except Exception:
@@ -644,24 +785,12 @@ class PanelConfiguracion(SettingsPanel):
 		)
 		self.suprimirSimbolosCheckBox.Value = config.conf["emoticonosAvanzados"]["suprimirSimbolosNVDA"]
 
-		# Librerías
-		# Translators: Etiqueta para activar la librería emoji.
-		self.usarEmojiCheckBox = sHelper.addItem(
-			wx.CheckBox(self, label=_("Usar librería e&moji (Unicode completo)"))
+		# Braille
+		# Translators: Etiqueta para activar la salida de descripciones en línea Braille.
+		self.mostrarBrailleCheckBox = sHelper.addItem(
+			wx.CheckBox(self, label=_("Mostrar descripciones de emoticonos en línea &Braille"))
 		)
-		self.usarEmojiCheckBox.Value = config.conf["emoticonosAvanzados"]["usarLibreriaEmoji"]
-
-		# Translators: Etiqueta para activar la librería emot.
-		self.usarEmotCheckBox = sHelper.addItem(
-			wx.CheckBox(self, label=_("Usar librería emo&t (emoticonos ASCII)"))
-		)
-		self.usarEmotCheckBox.Value = config.conf["emoticonosAvanzados"]["usarLibreriaEmot"]
-
-		# Translators: Etiqueta para activar las traducciones manuales.
-		self.usarManualCheckBox = sHelper.addItem(
-			wx.CheckBox(self, label=_("Usar traducciones ma&nuales en español"))
-		)
-		self.usarManualCheckBox.Value = config.conf["emoticonosAvanzados"]["usarTraduccionesManual"]
+		self.mostrarBrailleCheckBox.Value = config.conf["emoticonosAvanzados"]["mostrarEnBraille"]
 
 		# Translators: Etiqueta para ignorar mayúsculas en emoticonos.
 		self.ignorarMayusculasCheckBox = sHelper.addItem(
@@ -708,9 +837,7 @@ class PanelConfiguracion(SettingsPanel):
 		config.conf["emoticonosAvanzados"]["detectarEmojis"] = self.detectarEmojisCheckBox.Value
 		config.conf["emoticonosAvanzados"]["detectarEmoticonos"] = self.detectarEmoticonosCheckBox.Value
 		config.conf["emoticonosAvanzados"]["suprimirSimbolosNVDA"] = self.suprimirSimbolosCheckBox.Value
-		config.conf["emoticonosAvanzados"]["usarLibreriaEmoji"] = self.usarEmojiCheckBox.Value
-		config.conf["emoticonosAvanzados"]["usarLibreriaEmot"] = self.usarEmotCheckBox.Value
-		config.conf["emoticonosAvanzados"]["usarTraduccionesManual"] = self.usarManualCheckBox.Value
+		config.conf["emoticonosAvanzados"]["mostrarEnBraille"] = self.mostrarBrailleCheckBox.Value
 		config.conf["emoticonosAvanzados"]["ignorarMayusculas"] = self.ignorarMayusculasCheckBox.Value
 		config.conf["emoticonosAvanzados"]["formatoDescripcion"] = self.formatoEdit.Value
 		config.conf["emoticonosAvanzados"]["prefijo"] = self.prefijoEdit.Value

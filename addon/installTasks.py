@@ -20,12 +20,10 @@ confspec = {
 	"suprimirSimbolosNVDA": "boolean(default=False)",
 	"formatoDescripcion": 'string(default="[{}]")',
 	"ignorarMayusculas": "boolean(default=True)",
-	"usarLibreriaEmoji": "boolean(default=True)",
-	"usarLibreriaEmot": "boolean(default=True)",
-	"usarTraduccionesManual": "boolean(default=True)",
 	"prefijo": 'string(default="")',
 	"separadorAgrupado": 'string(default=", ")',
 	"nivelLog": "integer(default=0)",
+	"mostrarEnBraille": "boolean(default=False)",
 }
 config.conf.spec["emoticonosAvanzados"] = confspec
 
@@ -41,7 +39,16 @@ def onInstall():
 	"""
 	try:
 		if "emoticonosAvanzados" in config.conf:
-			if "detectarCldr" in config.conf["emoticonosAvanzados"]:
-				del config.conf["emoticonosAvanzados"]["detectarCldr"]
+			# Eliminar claves obsoletas de versiones anteriores
+			claves_obsoletas = [
+				"detectarCldr",
+				"usarLibreriaEmoji",
+				"usarLibreriaEmot",
+				"usarTraduccionesManual",
+			]
+			for clave in claves_obsoletas:
+				if clave in config.conf["emoticonosAvanzados"]:
+					del config.conf["emoticonosAvanzados"][clave]
 	except Exception:
 		pass
+

@@ -6,7 +6,6 @@
 import os
 import os.path
 import sys
-import shutil
 from pathlib import Path
 from collections.abc import Iterable
 from typing import Final
@@ -33,69 +32,6 @@ def validateVersionNumber(key: str, val: str, _):
 
 def expandGlobs(patterns: Iterable[str], rootdir: Path = Path(".")) -> list[FS.Entry]:
 	return [env.Entry(e) for pattern in patterns for e in rootdir.glob(pattern.lstrip('/'))]
-
-
-def copiarLibrerias(target, source, env):
-	"""
-	Copia las librerías de Python del entorno virtual al directorio libs del addon.
-
-	Busca las librerías emoji y emot en el entorno virtual y las copia
-	al directorio addon/libs/ para que se incluyan en el .nvda-addon.
-	"""
-	libsDir = Path("addon/libs")
-	libsDir.mkdir(parents=True, exist_ok=True)
-
-	# Buscar en el entorno virtual
-	venvSitePackages = None
-	venvDir = Path(".venv")
-	if venvDir.exists():
-		for sp in venvDir.glob("**/site-packages"):
-			venvSitePackages = sp
-			break
-
-	if venvSitePackages is None:
-		print("ADVERTENCIA: No se encontró entorno virtual. Buscando en site-packages del sistema...")
-		import site
-		for sp in site.getsitepackages():
-			if os.path.isdir(sp):
-				venvSitePackages = Path(sp)
-				break
-
-	if venvSitePackages is None:
-		print("ERROR: No se encontraron las librerías. Ejecute primero gestionar.bat para crear el entorno.")
-		return 1
-
-	# Copiar librería emoji
-	emojiSrc = venvSitePackages / "emoji"
-	if emojiSrc.is_dir():
-		emojiDst = libsDir / "emoji"
-		if emojiDst.exists():
-			shutil.rmtree(str(emojiDst))
-		shutil.copytree(
-			str(emojiSrc),
-			str(emojiDst),
-			ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
-		)
-		print(f"Copiada librería emoji desde: {emojiSrc}")
-	else:
-		print(f"ADVERTENCIA: No se encontró la librería emoji en: {emojiSrc}")
-
-	# Copiar librería emot
-	emotSrc = venvSitePackages / "emot"
-	if emotSrc.is_dir():
-		emotDst = libsDir / "emot"
-		if emotDst.exists():
-			shutil.rmtree(str(emotDst))
-		shutil.copytree(
-			str(emotSrc),
-			str(emotDst),
-			ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
-		)
-		print(f"Copiada librería emot desde: {emotSrc}")
-	else:
-		print(f"ADVERTENCIA: No se encontró la librería emot en: {emotSrc}")
-
-	return 0
 
 
 addonDir: Final = Path("addon/")
@@ -131,13 +67,8 @@ if "channel" in env and env["channel"] is not None:
 
 env.Append(**env["addon_info"])
 
-# Copiar librerías antes de construir el addon
-libsMarker = env.Command("addon/libs/.marker", [], copiarLibrerias)
-env.AlwaysBuild(libsMarker)
-
 addonFile = env.File("${addon_name}-${addon_version}.nvda-addon")
 addon = env.NVDAAddon(addonFile, env.Dir(addonDir), excludePatterns=buildVars.excludedFiles)
-env.Depends(addon, libsMarker)
 
 langDirs: list[FS.Dir] = [env.Dir(d) for d in env.Glob(localeDir/"*/") if d.isdir()]
 
@@ -197,4 +128,4 @@ env.Depends(manifest, "buildVars.py")
 
 env.Depends(addon, manifest)
 env.Default(addon)
-env.Clean(addon, [".sconsign.dblite", "addon/doc/" + buildVars.baseLanguage + "/", "addon/libs/"])
+env.Clean(addon, [".sconsign.dblite", "addon/doc/" + buildVars.baseLanguage + "/"])

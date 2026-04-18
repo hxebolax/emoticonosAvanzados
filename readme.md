@@ -4,6 +4,8 @@
 
 Emoticonos Avanzados es un complemento para el lector de pantallas NVDA que te permite controlar cómo se leen los emojis (😀❤️🚀) y los emoticonos clásicos (:) ;D XD) mientras navegas por aplicaciones, páginas web, chats y documentos.
 
+Utiliza los diccionarios CLDR (Common Locale Data Repository) de NVDA para ofrecer más de 4000 descripciones de emojis en español.
+
 Con este complemento puedes:
 
 * **Escuchar descripciones en español** de los emojis que encuentres.
@@ -85,17 +87,19 @@ Esta opción funciona en todos los modos excepto Desactivado. Es útil cuando qu
 
 **Nota importante:** Al activar esta opción, NVDA dejará de leer TODOS los símbolos especiales, incluidos los que podrían ser útiles como €, $, @, etc. Úsala con precaución.
 
-#### Usar librería emoji
+#### Mostrar descripciones de emoticonos en línea Braille
 
-Activa o desactiva el uso de la librería emoji para la detección de emojis Unicode. Esta librería proporciona detección completa pero consume algo más de memoria. Normalmente deberías dejarlo activado.
+Cuando está activado, las descripciones de emojis y emoticonos se muestran también en la línea Braille. Los caracteres Unicode de emojis (que normalmente aparecen como celdas vacías o no representables en Braille) se reemplazan por sus descripciones textuales.
 
-#### Usar librería emot
+Por ejemplo, si un texto contiene el emoji 😀, en la línea Braille aparecerá `[cara sonriendo]` en lugar del carácter Unicode original.
 
-Activa o desactiva el uso de la librería emot para la detección de emoticonos clásicos. Proporciona patrones adicionales a los incluidos por defecto.
+Esta opción respeta el modo de anuncio seleccionado:
 
-#### Usar traducciones manuales en español
+* En modo **Individual**, cada emoji se muestra con su descripción.
+* En modo **Agrupado**, los emojis repetidos se cuentan (ej: `3x [cara sonriendo]`).
+* En modo **Eliminado**, los emojis se eliminan también de la línea Braille.
 
-El complemento incluye más de 1200 traducciones al español revisadas manualmente para los emojis más comunes. Si desactivas esta opción, se usarán las traducciones automáticas de la librería emoji (que pueden ser menos naturales).
+**Nota:** Esta opción es independiente de la salida por voz. Puedes tener activado el modo individual por voz y también ver las descripciones en Braille simultáneamente, o activar solo la salida Braille sin modificar el comportamiento del habla.
 
 #### Ignorar mayúsculas en emoticonos clásicos
 
@@ -134,7 +138,7 @@ Niveles disponibles:
 
 Son los emojis gráficos estándar que se usan en todas las aplicaciones y sistemas operativos. Ejemplos: 😀 😂 ❤️ 👍 🎉 🚀 🌈 🐱 🍕 ⚡
 
-El complemento detecta más de 5000 emojis Unicode y tiene traducciones manuales para los 1200 más comunes.
+El complemento detecta más de 4000 emojis Unicode con descripciones en español provenientes del diccionario CLDR de NVDA, incluyendo emojis con modificadores de tono de piel y secuencias compuestas.
 
 ### Emoticonos clásicos
 
@@ -151,4 +155,4 @@ Este complemento se distribuye bajo la Licencia Pública General de GNU v2. Es s
 ## Créditos
 
 * **Autor**: Héctor J. Benítez Corredera
-* **Librerías utilizadas**: emoji (para detección de emojis Unicode) y emot (para emoticonos clásicos)
+* **Descripciones de emojis**: Diccionarios CLDR (Common Locale Data Repository) de NVDA en español

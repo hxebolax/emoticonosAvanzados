@@ -9,7 +9,7 @@
 
 **Nombre**: EmoticonosAvanzados  
 **Tipo**: Complemento (add-on) para NVDA (lector de pantallas)  
-**Versión actual**: 1.2.0  
+**Versión actual**: 1.3.0  
 **Autor**: Héctor J. Benítez Corredera (`xebolax@gmail.com`)  
 **Licencia**: GPL v2  
 **Compatibilidad**: NVDA 2024.1 → 2026.1  
@@ -45,9 +45,9 @@ EmoticonosNVDA/
 ├── adjuntos/                           # Material de referencia y desarrollo
 │   ├── AddonTemplate/                  # Template oficial de addons NVDA
 │   ├── ejemplo.py                      # Código de referencia
-│   ├── emoji-master/                   # Código fuente librería emoji
-│   ├── emot-master/                    # Código fuente librería emot
-│   ├── emoticons-main/                 # Addon emoticons original (referencia)
+│   ├── emoji/                   # Código fuente librería emoji
+│   ├── emot/                    # Código fuente librería emot
+│   ├── emoticons/                 # Addon emoticons original (referencia)
 │   ├── nvda/                           # Fuentes de NVDA (referencia)
 │   └── zEmoticonos/                    # Versión anterior/prototipo
 ├── site_scons/                         # Herramientas SCons para NVDA
@@ -138,6 +138,7 @@ LOG_COMPLETO = 3
 | `detectarEmojis` | boolean | True | Detectar emojis Unicode |
 | `detectarEmoticonos` | boolean | True | Detectar emoticonos clásicos |
 | `suprimirSimbolosNVDA` | boolean | False | Suprimir símbolos NVDA |
+| `mostrarEnBraille` | boolean | False | Mostrar descripciones en línea Braille |
 | `formatoDescripcion` | string | `"[{}]"` | Formato de la descripción |
 | `ignorarMayusculas` | boolean | True | XD = xd |
 | `usarLibreriaEmoji` | boolean | True | Activar librería emoji |
@@ -285,6 +286,15 @@ if _libsPathAgregado and _libsPath in sys.path:
 - Eliminado import no utilizado (`globalCommands.SCRCAT_TOOLS`)
 - Categoría de scripts unificada: "Emoticonos Avanzados"
 
+### v1.3.0 — Soporte Braille
+- **Nueva funcionalidad**: Soporte para línea Braille
+  - Los emojis Unicode se reemplazan por sus descripciones textuales en la salida Braille
+  - Implementado mediante monkey-patching de `braille.Region.update`
+  - El parche intercepta `rawText` antes de la traducción a celdas Braille
+  - Nueva opción `mostrarEnBraille` en configuración (desactivada por defecto)
+  - Ajuste automático de cursor y selección cuando el texto cambia de longitud
+- Respeta el modo de anuncio: individual, agrupado y eliminado
+
 ---
 
 ## 6. Decisiones Técnicas Importantes
@@ -334,7 +344,7 @@ pip install scons markdown
 scons
 ```
 
-El resultado es `emoticonosAvanzados-1.2.0.nvda-addon` en la raíz del proyecto.
+El resultado es `emoticonosAvanzados-1.3.0.nvda-addon` en la raíz del proyecto.
 
 ---
 
@@ -363,15 +373,15 @@ El resultado es `emoticonosAvanzados-1.2.0.nvda-addon` en la raíz del proyecto.
 |---------|--------|
 | Funcionalidad core | ✅ Completa |
 | Panel de configuración | ✅ Completo con todas las opciones |
+| Soporte Braille | ✅ Monkey-patch de braille.Region.update |
 | Traducciones (español) | ✅ 1200+ emojis, ~70 emoticonos, ~80 traducciones emot |
 | Documentación usuario | ✅ readme.md completo |
-| Changelog | ✅ Actualizado hasta v1.2.0 |
+| Changelog | ✅ Actualizado hasta v1.3.0 |
 | Build system | ✅ Funcional (gestionar.bat + SCons) |
 | Falsos positivos | ✅ Resueltos con word boundaries |
 | Logging | ✅ 4 niveles implementados |
 | i18n | ✅ Preparado (cadenas con `_()`, .pot generable) |
-| Publicación | ✅ Post de Mastodon preparado |
-| Addon compilado | ✅ `emoticonosAvanzados-1.2.0.nvda-addon` generado |
+| Addon compilado | ⬜ Pendiente compilación v1.3.0 |
 
 ---
 

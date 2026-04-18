@@ -6,7 +6,7 @@
 """
 Motor de detección de emoticonos y emojis.
 
-Módulo central que utiliza las librerías emoji y emot para detectar,
+Módulo central que utiliza los diccionarios CLDR de NVDA para detectar,
 clasificar, agrupar y describir emojis Unicode y emoticonos clásicos.
 """
 
@@ -14,23 +14,7 @@ import re
 
 from logHandler import log
 
-from .traducciones import TRADUCCIONES_EMOTICONOS, TRADUCCIONES_EMOJIS_MANUAL, EMOTICONOS_MANUALES
-
-# Intentar importar las librerías empaquetadas
-_emoji = None
-
-try:
-	import emoji as _emoji
-	log.info("EmoticonosAvanzados: Librería emoji cargada correctamente.")
-except Exception as e:
-	log.warning("EmoticonosAvanzados: No se pudo cargar la librería emoji: %s" % str(e))
-
-try:
-	from emot.emo_unicode import EMOTICONS_EMO as _EMOTICONS_EMO
-	log.info("EmoticonosAvanzados: Librería emot cargada correctamente.")
-except Exception as e:
-	_EMOTICONS_EMO = {}
-	log.warning("EmoticonosAvanzados: No se pudo cargar la librería emot: %s" % str(e))
+from .traducciones import TRADUCCIONES_EMOJIS, EMOTICONOS_MANUALES
 
 
 def _es_alfanumerico(char):
@@ -52,46 +36,32 @@ class MotorEmoticonos:
 	"""
 	Motor avanzado para identificar emojis Unicode y emoticonos clásicos.
 
-	Combina las librerías emoji y emot con diccionarios manuales en español
-	para ofrecer detección exhaustiva con descripciones localizadas.
+	Utiliza el diccionario CLDR de NVDA en español junto con emoticonos
+	ASCII manuales para ofrecer detección exhaustiva con descripciones localizadas.
 
 	:param ignorar_mayusculas: Si True, trata variantes como XD/xD como iguales.
 	:type ignorar_mayusculas: bool
-	:param usar_emoji: Si True, utiliza la librería emoji para detección.
-	:type usar_emoji: bool
-	:param usar_emot: Si True, utiliza la librería emot para detección.
-	:type usar_emot: bool
 	:param usar_manual: Si True, utiliza las traducciones manuales.
 	:type usar_manual: bool
 	"""
 
-	def __init__(self, ignorar_mayusculas=True, usar_emoji=True, usar_emot=True, usar_manual=True):
+	def __init__(self, ignorar_mayusculas=True, usar_manual=True):
 		"""
 		Inicializa el motor con la configuración dada.
 		"""
 		self.ignorar_mayusculas = ignorar_mayusculas
-		self.usar_emoji = usar_emoji and _emoji is not None
-		self.usar_emot = usar_emot and len(_EMOTICONS_EMO) > 0
 		self.usar_manual = usar_manual
 
-		self._traducciones_emoticonos = TRADUCCIONES_EMOTICONOS
-		self._traducciones_emojis = TRADUCCIONES_EMOJIS_MANUAL
+		self._traducciones_emojis = TRADUCCIONES_EMOJIS
 		self._emoticonos_manual = EMOTICONOS_MANUALES
 
-		# Intentar cargar español en emoji
-		if self.usar_emoji:
-			try:
-				_emoji.config.load_language("es")
-			except Exception:
-				pass
-
-		# Compilar patrones
+		# Compilar patrones para detección
 		self._patron_manual = self._crear_patron_manual()
-		self._patron_emot = self._crear_patron_emot()
+		self._patron_emojis = self._crear_patron_emojis()
 
 	def _crear_patron_manual(self):
 		"""
-		Crea un patrón regex para los emoticonos manuales.
+		Crea un patrón regex para los emoticonos manuales ASCII.
 
 		:return: Patrón regex compilado.
 		:rtype: re.Pattern
@@ -108,26 +78,28 @@ class MotorEmoticonos:
 			return re.compile(patron, re.IGNORECASE)
 		return re.compile(patron)
 
-	def _crear_patron_emot(self):
+	def _crear_patron_emojis(self):
 		"""
-		Crea un patrón regex usando los emoticonos de la librería emot.
+		Crea un patrón regex para detectar emojis Unicode del diccionario CLDR.
+
+		Ordena los emojis por longitud descendente para que las secuencias
+		compuestas (como emojis con modificadores de tono de piel o ZWJ)
+		se detecten antes que sus componentes individuales.
 
 		:return: Patrón regex compilado.
 		:rtype: re.Pattern
 		"""
-		if not self.usar_emot or not _EMOTICONS_EMO:
+		if not self._traducciones_emojis:
 			return re.compile(r"(?!x)x")
 
 		try:
-			claves = list(_EMOTICONS_EMO.keys())
+			claves = list(self._traducciones_emojis.keys())
 			claves_escapadas = [re.escape(c) for c in claves]
 			claves_ordenadas = sorted(claves_escapadas, key=len, reverse=True)
 			patron = "|".join(claves_ordenadas)
-
-			if self.ignorar_mayusculas:
-				return re.compile(patron, re.IGNORECASE)
 			return re.compile(patron)
-		except Exception:
+		except Exception as e:
+			log.warning("EmoticonosAvanzados: Error creando patrón de emojis: %s" % str(e))
 			return re.compile(r"(?!x)x")
 
 	def _validar_limites(self, texto, inicio, fin):
@@ -174,38 +146,21 @@ class MotorEmoticonos:
 
 	def _obtener_descripcion_emoji(self, valor):
 		"""
-		Obtiene la descripción de un emoji Unicode.
-
-		Busca primero en traducciones manuales, luego en la librería emoji
-		intentando español y finalmente inglés.
+		Obtiene la descripción de un emoji Unicode desde el diccionario CLDR.
 
 		:param valor: Carácter emoji.
 		:type valor: str
 		:return: Descripción en español.
 		:rtype: str
 		"""
-		# Primero buscar en traducciones manuales
 		if valor in self._traducciones_emojis:
 			return self._traducciones_emojis[valor]
-
-		# Buscar en la librería emoji
-		if self.usar_emoji and _emoji is not None:
-			if valor in _emoji.EMOJI_DATA:
-				datos = _emoji.EMOJI_DATA[valor]
-				nombre_es = datos.get("es")
-				if nombre_es:
-					return nombre_es.replace("_", " ").strip(":")
-				nombre_en = datos.get("en")
-				if nombre_en:
-					return nombre_en.replace("_", " ").strip(":")
 
 		return "emoji sin descripción"
 
 	def _obtener_descripcion_emoticono(self, valor):
 		"""
-		Obtiene la descripción de un emoticono clásico.
-
-		Busca primero en diccionario manual, luego en emot con traducción.
+		Obtiene la descripción de un emoticono clásico ASCII.
 
 		:param valor: Emoticono clásico (ej: :) ;D).
 		:type valor: str
@@ -220,20 +175,6 @@ class MotorEmoticonos:
 			for clave in self._emoticonos_manual:
 				if clave.lower() == valor.lower():
 					return self._emoticonos_manual[clave]
-
-		# Buscar en emot
-		if self.usar_emot and _EMOTICONS_EMO:
-			descripcion_original = _EMOTICONS_EMO.get(valor)
-			if descripcion_original is None and self.ignorar_mayusculas:
-				for clave in _EMOTICONS_EMO:
-					if clave.lower() == valor.lower():
-						descripcion_original = _EMOTICONS_EMO[clave]
-						break
-
-			if descripcion_original:
-				if descripcion_original in self._traducciones_emoticonos:
-					return self._traducciones_emoticonos[descripcion_original]
-				return descripcion_original.lower()
 
 		return "emoticono sin descripción"
 
@@ -268,7 +209,7 @@ class MotorEmoticonos:
 
 	def detectar_emojis(self, texto):
 		"""
-		Detecta emojis Unicode en un texto.
+		Detecta emojis Unicode en un texto usando el diccionario CLDR.
 
 		:param texto: Texto a analizar.
 		:type texto: str
@@ -276,14 +217,14 @@ class MotorEmoticonos:
 		:rtype: list
 		"""
 		resultados = []
-		if not self.usar_emoji or _emoji is None:
+		if not self._traducciones_emojis:
 			return resultados
 
 		try:
-			for token in _emoji.analyze(texto):
-				valor = token.chars
-				inicio = token.value.start
-				fin = token.value.end
+			for coincidencia in self._patron_emojis.finditer(texto):
+				valor = coincidencia.group(0)
+				inicio = coincidencia.start()
+				fin = coincidencia.end()
 				descripcion = self._obtener_descripcion_emoji(valor)
 				self._agregar_item(resultados, "emoji", valor, inicio, fin, descripcion, valor)
 		except Exception as e:
@@ -293,7 +234,7 @@ class MotorEmoticonos:
 
 	def detectar_emoticonos(self, texto):
 		"""
-		Detecta emoticonos clásicos en un texto.
+		Detecta emoticonos clásicos ASCII en un texto.
 
 		Aplica verificación de límites de palabra para evitar
 		falsos positivos (por ejemplo, no detectar ':P' dentro de 'Explorador').
@@ -304,29 +245,12 @@ class MotorEmoticonos:
 		:rtype: list
 		"""
 		resultados = []
-		usados = set()
 
 		# Buscar emoticonos manuales
 		if self.usar_manual:
 			for coincidencia in self._patron_manual.finditer(texto):
 				inicio = coincidencia.start()
 				fin = coincidencia.end()
-				# Verificar que no esté dentro de una palabra
-				if not self._validar_limites(texto, inicio, fin):
-					continue
-				valor = coincidencia.group(0)
-				descripcion = self._obtener_descripcion_emoticono(valor)
-				clave = self._normalizar_clave(valor)
-				usados.add((inicio, fin))
-				self._agregar_item(resultados, "emoticono", valor, inicio, fin, descripcion, clave)
-
-		# Buscar emoticonos de emot (evitar duplicados)
-		if self.usar_emot:
-			for coincidencia in self._patron_emot.finditer(texto):
-				inicio = coincidencia.start()
-				fin = coincidencia.end()
-				if (inicio, fin) in usados:
-					continue
 				# Verificar que no esté dentro de una palabra
 				if not self._validar_limites(texto, inicio, fin):
 					continue
@@ -436,18 +360,4 @@ class MotorEmoticonos:
 		:return: Diccionario emoji→descripción.
 		:rtype: dict
 		"""
-		resultado = {}
-
-		# Emojis manuales
-		if self.usar_manual:
-			resultado.update(self._traducciones_emojis)
-
-		# Emojis de la librería
-		if self.usar_emoji and _emoji is not None:
-			for emoji_char in _emoji.EMOJI_DATA:
-				if emoji_char not in resultado:
-					desc = self._obtener_descripcion_emoji(emoji_char)
-					if desc != "emoji sin descripción":
-						resultado[emoji_char] = desc
-
-		return resultado
+		return dict(self._traducciones_emojis)
