@@ -1,0 +1,22 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Python files always use LF
+*.py text eol=lf
+
+# Batch files use CRLF
+*.bat text eol=crlf
+
+# Template files use LF
+*.tpl text eol=lf
+
+# Markdown files use LF
+*.md text eol=lf
+
+# PO files use LF
+*.po text eol=lf
+*.pot text eol=lf
+
+# Binary files
+*.nvda-addon binary
+*.mo binary

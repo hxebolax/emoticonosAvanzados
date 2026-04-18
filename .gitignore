@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Build artifacts
+*.nvda-addon
+*.pot
+*.mo
+.sconsign.dblite
+addon/manifest.ini
+addon/doc/es/
+addon/doc/en/
+addon/libs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Distribution
+dist/
+build/
+*.egg-info/

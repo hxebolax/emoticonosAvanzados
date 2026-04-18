@@ -1,0 +1,41 @@
+/* Estilos para la documentación HTML del complemento */
+dt {
+	font-weight: bold;
+}
+
+dd {
+	margin-bottom: 1em;
+}
+
+body {
+	font-family: sans-serif;
+	line-height: 1.6;
+	max-width: 800px;
+	margin: 0 auto;
+	padding: 1em;
+}
+
+h1, h2, h3 {
+	color: #333;
+}
+
+code {
+	background-color: #f4f4f4;
+	padding: 2px 4px;
+	border-radius: 3px;
+}
+
+table {
+	border-collapse: collapse;
+	width: 100%;
+}
+
+th, td {
+	border: 1px solid #ddd;
+	padding: 8px;
+	text-align: left;
+}
+
+th {
+	background-color: #f4f4f4;
+}

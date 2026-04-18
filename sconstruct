@@ -1,0 +1,200 @@
+# Sconstruct personalizado para EmoticonosAvanzados
+# Copyright (C) 2026 Héctor J. Benítez Corredera
+# Basado en la plantilla oficial de complementos de NVDA.
+# Este archivo está cubierto por la Licencia Pública General de GNU.
+
+import os
+import os.path
+import sys
+import shutil
+from pathlib import Path
+from collections.abc import Iterable
+from typing import Final
+
+from SCons.Script import EnsurePythonVersion, Variables, BoolVariable, Environment, Copy
+from SCons.Node import FS
+
+EnsurePythonVersion(3, 10)
+
+sys.dont_write_bytecode = True
+
+import buildVars  # NOQA: E402
+
+
+def validateVersionNumber(key: str, val: str, _):
+	if val == "0.0.0":
+		return
+	versionNumber = val.split(".")
+	if len(versionNumber) < 3:
+		raise ValueError(f"{key} must have three parts (major.minor.patch)")
+	if not all([part.isnumeric() for part in versionNumber]):
+		raise ValueError(f"{key} (major.minor.patch) must be integers")
+
+
+def expandGlobs(patterns: Iterable[str], rootdir: Path = Path(".")) -> list[FS.Entry]:
+	return [env.Entry(e) for pattern in patterns for e in rootdir.glob(pattern.lstrip('/'))]
+
+
+def copiarLibrerias(target, source, env):
+	"""
+	Copia las librerías de Python del entorno virtual al directorio libs del addon.
+
+	Busca las librerías emoji y emot en el entorno virtual y las copia
+	al directorio addon/libs/ para que se incluyan en el .nvda-addon.
+	"""
+	libsDir = Path("addon/libs")
+	libsDir.mkdir(parents=True, exist_ok=True)
+
+	# Buscar en el entorno virtual
+	venvSitePackages = None
+	venvDir = Path(".venv")
+	if venvDir.exists():
+		for sp in venvDir.glob("**/site-packages"):
+			venvSitePackages = sp
+			break
+
+	if venvSitePackages is None:
+		print("ADVERTENCIA: No se encontró entorno virtual. Buscando en site-packages del sistema...")
+		import site
+		for sp in site.getsitepackages():
+			if os.path.isdir(sp):
+				venvSitePackages = Path(sp)
+				break
+
+	if venvSitePackages is None:
+		print("ERROR: No se encontraron las librerías. Ejecute primero gestionar.bat para crear el entorno.")
+		return 1
+
+	# Copiar librería emoji
+	emojiSrc = venvSitePackages / "emoji"
+	if emojiSrc.is_dir():
+		emojiDst = libsDir / "emoji"
+		if emojiDst.exists():
+			shutil.rmtree(str(emojiDst))
+		shutil.copytree(
+			str(emojiSrc),
+			str(emojiDst),
+			ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+		)
+		print(f"Copiada librería emoji desde: {emojiSrc}")
+	else:
+		print(f"ADVERTENCIA: No se encontró la librería emoji en: {emojiSrc}")
+
+	# Copiar librería emot
+	emotSrc = venvSitePackages / "emot"
+	if emotSrc.is_dir():
+		emotDst = libsDir / "emot"
+		if emotDst.exists():
+			shutil.rmtree(str(emotDst))
+		shutil.copytree(
+			str(emotSrc),
+			str(emotDst),
+			ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+		)
+		print(f"Copiada librería emot desde: {emotSrc}")
+	else:
+		print(f"ADVERTENCIA: No se encontró la librería emot en: {emotSrc}")
+
+	return 0
+
+
+addonDir: Final = Path("addon/")
+localeDir: Final = addonDir / "locale"
+docsDir: Final = addonDir / "doc"
+
+
+vars = Variables()
+vars.Add("version", "The version of this build", buildVars.addon_info["addon_version"])
+vars.Add("versionNumber", "Version number of the form major.minor.patch", "0.0.0", validateVersionNumber)
+vars.Add(BoolVariable("dev", "Whether this is a daily development version", False))
+vars.Add("channel", "Update channel for this build", buildVars.addon_info["addon_updateChannel"])
+
+env = Environment(variables=vars, ENV=os.environ, tools=["gettexttool", "NVDATool"])
+env.Append(
+	addon_info=buildVars.addon_info,
+	brailleTables=buildVars.brailleTables,
+	symbolDictionaries=buildVars.symbolDictionaries,
+)
+
+if env["dev"]:
+	from datetime import date
+
+	versionTimestamp = date.today().strftime('%Y%m%d')
+	version = f"{versionTimestamp}.0.0"
+	env["addon_info"]["addon_version"] = version
+	env["versionNumber"] = version
+	env["channel"] = "dev"
+elif env["version"] is not None:
+	env["addon_info"]["addon_version"] = env["version"]
+if "channel" in env and env["channel"] is not None:
+	env["addon_info"]["addon_updateChannel"] = env["channel"]
+
+env.Append(**env["addon_info"])
+
+# Copiar librerías antes de construir el addon
+libsMarker = env.Command("addon/libs/.marker", [], copiarLibrerias)
+env.AlwaysBuild(libsMarker)
+
+addonFile = env.File("${addon_name}-${addon_version}.nvda-addon")
+addon = env.NVDAAddon(addonFile, env.Dir(addonDir), excludePatterns=buildVars.excludedFiles)
+env.Depends(addon, libsMarker)
+
+langDirs: list[FS.Dir] = [env.Dir(d) for d in env.Glob(localeDir/"*/") if d.isdir()]
+
+moByLang: dict[str, FS.File] = {}
+for dir in langDirs:
+	poFile = dir.File(os.path.join("LC_MESSAGES", "nvda.po"))
+	moTarget = env.gettextMoFile(poFile)
+	moFile = env.File(moTarget[0])
+	moByLang[dir.name] = moFile
+	env.Depends(moTarget, poFile)
+	translatedManifest = env.NVDATranslatedManifest(
+		dir.File("manifest.ini"), [moFile, "manifest-translated.ini.tpl"]
+	)
+	env.Depends(translatedManifest, ["buildVars.py"])
+	env.Depends(addon, [translatedManifest, moTarget])
+
+pythonFiles = expandGlobs(buildVars.pythonSources)
+for file in pythonFiles:
+	env.Depends(addon, file)
+
+if (cssFile := Path("style.css")).is_file():
+	cssPath = docsDir / cssFile
+	cssTarget = env.Command(str(cssPath), str(cssFile), Copy("$TARGET", "$SOURCE"))
+	env.Depends(addon, cssTarget)
+
+if (readmeFile := Path("readme.md")).is_file():
+	readmePath = docsDir / buildVars.baseLanguage / readmeFile
+	readmeTarget = env.Command(str(readmePath), str(readmeFile), Copy("$TARGET", "$SOURCE"))
+	env.Depends(addon, readmeTarget)
+
+for mdFile in env.Glob(docsDir/"*/*.md"):
+	lang = mdFile.dir.name
+	moFile = moByLang.get(lang)
+	htmlFile = env.md2html(mdFile, moFile=moFile, mdExtensions=buildVars.markdownExtensions)
+	env.Depends(htmlFile, mdFile)
+	if moFile:
+		env.Depends(htmlFile, moFile)
+	env.Depends(addon, htmlFile)
+
+# Pot target
+i18nFiles = expandGlobs(buildVars.i18nSources)
+gettextvars: dict[str, str] = {
+	"gettext_package_bugs_address": "xebolax@gmail.com",
+	"gettext_package_name": buildVars.addon_info["addon_name"],
+	"gettext_package_version": buildVars.addon_info["addon_version"],
+}
+
+pot = env.gettextPotFile("${addon_name}.pot", i18nFiles, **gettextvars)
+env.Alias("pot", pot)
+env.Depends(pot, i18nFiles)
+mergePot = env.gettextMergePotFile("${addon_name}-merge.pot", i18nFiles, **gettextvars)
+env.Alias("mergePot", mergePot)
+env.Depends(mergePot, i18nFiles)
+
+manifest = env.NVDAManifest(env.File(addonDir/"manifest.ini"), "manifest.ini.tpl")
+env.Depends(manifest, "buildVars.py")
+
+env.Depends(addon, manifest)
+env.Default(addon)
+env.Clean(addon, [".sconsign.dblite", "addon/doc/" + buildVars.baseLanguage + "/", "addon/libs/"])

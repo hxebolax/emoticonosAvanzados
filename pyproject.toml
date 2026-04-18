@@ -1,0 +1,56 @@
+[tool.ruff]
+line-length = 110
+
+builtins = [
+	"_",
+	"ngettext",
+	"pgettext",
+	"npgettext",
+]
+
+include = [
+	"*.py",
+	"sconstruct",
+]
+
+exclude = [
+	".git",
+	"__pycache__",
+	"adjuntos",
+]
+
+[tool.ruff.format]
+indent-style = "tab"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint]
+ignore = [
+	"W191",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"sconstruct" = ["F821"]
+
+[tool.pyright]
+pythonPlatform = "Windows"
+typeCheckingMode = "basic"
+
+include = [
+	"**/*.py",
+]
+
+exclude = [
+	"sconstruct",
+	".git",
+	"__pycache__",
+	"adjuntos",
+]
+
+extraPaths = [
+	"./addon",
+]
+
+reportMissingImports = false
+reportMissingTypeStubs = false
