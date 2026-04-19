@@ -377,6 +377,7 @@ def _obtenerDescripcionBraille(char, motor, formato, texto_prefijo):
 	:rtype: list[int] | None
 	"""
 	import louisHelper
+	import louis
 	descripcion = motor.obtener_descripcion(char)
 	if not descripcion:
 		return None
@@ -385,10 +386,36 @@ def _obtenerDescripcionBraille(char, motor, formato, texto_prefijo):
 		celdas, _, _, _ = louisHelper.translate(
 			[braille.handler.table.fileName, "braille-patterns.cti"],
 			texto_desc,
+			mode=louis.dotsIO,
 		)
 		return celdas
 	except Exception:
 		return None
+
+def _es_modificador_emoji(char):
+	"""
+	Comprueba si un carácter es un modificador de emoji.
+
+	Estos caracteres modifican emojis adyacentes (variation selectors,
+	zero-width joiners, modificadores de tono de piel, etc.) y deben
+	absorberse en el reemplazo braille del emoji al que acompañan.
+
+	:param char: Carácter a comprobar.
+	:type char: str
+	:return: True si es un modificador de emoji.
+	:rtype: bool
+	"""
+	code = ord(char)
+	return (
+		# Variation Selectors (VS1-VS16)
+		0xFE00 <= code <= 0xFE0F
+		# Zero-Width Joiner
+		or code == 0x200D
+		# Combining Enclosing Keycap
+		or code == 0x20E3
+		# Fitzpatrick Skin Tone Modifiers
+		or 0x1F3FB <= code <= 0x1F3FF
+	)
 
 
 def _procesarBrailleEmojis(region):
@@ -399,6 +426,10 @@ def _procesarBrailleEmojis(region):
 	haya completado la traducción a Braille. No modifica rawText ni ninguna
 	estructura interna de NVDA. Solo reconstruye brailleCells, brailleToRawPos,
 	rawToBraillePos y brailleCursorPos.
+
+	Además absorbe variation selectors, ZWJ y modificadores de tono de piel
+	que sigan al emoji detectado, evitando que sus celdas hex aparezcan
+	en la línea Braille junto a la descripción.
 
 	:param region: Región Braille ya actualizada por NVDA.
 	:type region: braille.Region
@@ -414,7 +445,6 @@ def _procesarBrailleEmojis(region):
 	texto_prefijo = prefijo + " " if prefijo else ""
 
 	# Buscar emojis en rawText y preparar reemplazos
-	# Cada reemplazo: (pos_rawText, longitud_emoji, celdas_descripcion)
 	reemplazos = {}
 	resultados = motor.detectar_todo(region.rawText)
 	if not resultados:
@@ -422,24 +452,34 @@ def _procesarBrailleEmojis(region):
 
 	modo = config.conf["emoticonosAvanzados"]["modo"]
 	for item in resultados:
+		inicio = item["inicio"]
+		fin = item["fin"]
+
+		# Extender fin para absorber modificadores de emoji que siguen
+		# (variation selectors, ZWJ, skin tones, keycap)
+		while fin < len(region.rawText) and _es_modificador_emoji(region.rawText[fin]):
+			fin += 1
+
 		if modo == MODO_ELIMINADO:
 			# En modo eliminado: reemplazar por espacio en braille
 			import louisHelper
+			import louis
 			try:
 				celdas, _, _, _ = louisHelper.translate(
 					[braille.handler.table.fileName, "braille-patterns.cti"],
 					" ",
+					mode=louis.dotsIO,
 				)
 			except Exception:
 				continue
 		else:
 			celdas = _obtenerDescripcionBraille(
-				region.rawText[item["inicio"]:item["fin"]],
+				region.rawText[inicio:item["fin"]],
 				motor, formato, texto_prefijo,
 			)
 		if celdas is not None:
-			reemplazos[item["inicio"]] = {
-				"fin": item["fin"],
+			reemplazos[inicio] = {
+				"fin": fin,
 				"celdas": celdas,
 			}
 
@@ -462,7 +502,8 @@ def _procesarBrailleEmojis(region):
 			fin_emoji = reemplazo["fin"]
 
 			# El rawToBraillePos para todas las posiciones del emoji
-			# apunta al inicio de las celdas de la descripción
+			# (incluyendo modificadores absorbidos) apunta al inicio
+			# de las celdas de la descripción
 			pos_braille_inicio = len(nuevosCeldas)
 			for k in range(i, fin_emoji):
 				if k < len(nuevoRawToBraille):
@@ -498,6 +539,7 @@ def _procesarBrailleEmojis(region):
 	# Recalcular brailleCursorPos a partir de cursorPos y el nuevo mapa
 	if region.cursorPos is not None and region.cursorPos < len(nuevoRawToBraille):
 		region.brailleCursorPos = nuevoRawToBraille[region.cursorPos]
+
 
 
 

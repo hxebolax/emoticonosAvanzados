@@ -25,7 +25,7 @@ addon_info = AddonInfo(
 Permite configurar cómo NVDA anuncia los emoticonos: uno por uno, agrupando repetidos o eliminándolos del habla.
 Utiliza los diccionarios CLDR de NVDA para una detección exhaustiva con más de 3900 descripciones en español."""
 	),
-	addon_version="1.3.4",
+	addon_version="1.3.5",
 	# Translators: Registro de cambios del complemento.
 	addon_changelog=_(
 		"""* Versión inicial.

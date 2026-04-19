@@ -1,5 +1,12 @@
 # Registro de cambios
 
+## 1.3.5 (2026-04-19)
+
+### Correcciones
+
+* **Refinamiento del soporte Braille**: Corregida la detección y reemplazo de emojis con múltiples puntos de código (como selectores de variación U+FE0F o modificadores de tono de piel) para evitar caracteres residuales en la línea Braille.
+* Limpieza de código y optimización del motor de mapeo de posiciones en Braille.
+
 ## 1.3.4 (2026-04-19)
 
 ### Correcciones

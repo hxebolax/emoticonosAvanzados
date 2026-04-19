@@ -1,4 +1,5 @@
 # Emoticonos Avanzados para NVDA
+**Versión: 1.3.5**
 
 ## ¿Qué es este complemento?
 
