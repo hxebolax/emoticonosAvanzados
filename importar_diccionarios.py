@@ -129,12 +129,13 @@ def es_emoji_unicode(char):
 	]
 
 	# Caracteres sueltos que son emoji
+	# NOTA: ©(0x00A9), ®(0x00AE) y ™(0x2122) están EXCLUIDOS deliberadamente
+	# porque NVDA los maneja nativamente. Incluirlos causa interferencia con
+	# la lectura normal (por ejemplo, Windows convierte (c) en © y nuestro
+	# addon lo captura incorrectamente).
 	emoji_singles = {
-		0x00A9,  # © copyright
-		0x00AE,  # ® registered
 		0x203C,  # ‼ double exclamation
 		0x2049,  # ⁉ exclamation question
-		0x2122,  # ™ trade mark
 		0x2139,  # ℹ information
 		0x2194, 0x2195, 0x2196, 0x2197, 0x2198, 0x2199,  # flechas
 		0x21A9, 0x21AA,  # flechas curvas

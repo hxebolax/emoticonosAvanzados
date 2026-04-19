@@ -75,7 +75,7 @@ _dicHabla = speechDictHandler.SpeechDict()
 # Estado del filtro de habla
 _filtroRegistrado = False
 # Referencia al método original de braille.Region.update para monkey-patching
-_original_braille_update = None
+_original_region_update = None
 
 
 def _log(mensaje, nivel=LOG_INFO):
@@ -155,6 +155,23 @@ def _obtenerSimbolosNVDA():
 	return simbolos
 
 
+def _construirPatronEmoticono(emoticono):
+	"""
+	Construye el patrón regex para un emoticono con detección de contexto.
+
+	Para emoticonos como :/ y :-/ se añaden restricciones adicionales
+	para evitar detección dentro de URLs (http://, https://, etc.).
+
+	:param emoticono: El emoticono para el que construir el patrón.
+	:type emoticono: str
+	:return: Patrón regex como string.
+	:rtype: str
+	"""
+	if emoticono in (":/", ":-/"):
+		return r"(?<!\w)(?<!http:)(?<!https:)(?<!ftp:)(?<!file:)" + re.escape(emoticono) + r"(?!/)"
+	return r"(?<!\w)" + re.escape(emoticono) + r"(?!\w)"
+
+
 def _construirDiccionario():
 	"""
 	Construye el diccionario de habla temporal con las entradas de emoticonos.
@@ -213,7 +230,7 @@ def _construirDiccionario():
 				)
 		if detectarEmoticonos:
 			for emoticono, descripcion in EMOTICONOS_MANUALES.items():
-				patron = r"(?<!\w)" + re.escape(emoticono) + r"(?!\w)"
+				patron = _construirPatronEmoticono(emoticono)
 				_dicHabla.append(
 					speechDictHandler.SpeechDictEntry(
 						patron,
@@ -243,7 +260,7 @@ def _construirDiccionario():
 				)
 		if detectarEmoticonos:
 			for emoticono, descripcion in EMOTICONOS_MANUALES.items():
-				patron = r"(?<!\w)" + re.escape(emoticono) + r"(?!\w)"
+				patron = _construirPatronEmoticono(emoticono)
 				reemplazo = " " + texto_prefijo + formato.format(descripcion) + " "
 				_dicHabla.append(
 					speechDictHandler.SpeechDictEntry(
@@ -341,168 +358,187 @@ def _desactivarAnuncio():
 		_filtroRegistrado = False
 
 
-def _reemplazarTextoParaBraille(texto):
+def _obtenerDescripcionBraille(char, motor, formato, texto_prefijo):
 	"""
-	Reemplaza emojis y emoticonos en el texto para su presentación en línea Braille.
+	Obtiene la representación braille de la descripción de un carácter emoji.
 
-	Detecta emoticonos en el texto y los sustituye por sus descripciones
-	textuales, de forma que la línea Braille muestre información legible
-	en lugar de caracteres Unicode que no se representan en Braille.
+	Busca la descripción del emoji en el motor y la traduce a celdas Braille
+	usando louisHelper.translate con la tabla actualmente configurada.
 
-	Devuelve una tupla (nuevo_texto, mapa_posiciones) donde mapa_posiciones
-	es una lista que mapea cada posición del texto original (0..len) a su
-	posición correspondiente en el texto nuevo, para poder ajustar el cursor.
-
-	La política de mapeo es:
-	- Posiciones en texto normal: se mapean 1:1 con el nuevo texto.
-	- Posiciones dentro de un emoji: se mapean al final de la descripción
-	  (el cursor "salta" la descripción completa).
-
-	:param texto: Texto original con posibles emoticonos.
-	:type texto: str
-	:return: Tupla (texto_nuevo, mapa_posiciones).
-	:rtype: tuple
+	:param char: Carácter emoji a describir.
+	:type char: str
+	:param motor: Instancia del motor de emoticonos.
+	:type motor: MotorEmoticonos
+	:param formato: Formato de descripción (ej: "[{}]").
+	:type formato: str
+	:param texto_prefijo: Prefijo antes de la descripción.
+	:type texto_prefijo: str
+	:return: Lista de celdas Braille para la descripción, o None si no hay descripción.
+	:rtype: list[int] | None
 	"""
-	if not texto or not texto.strip():
-		return texto, None
-
+	import louisHelper
+	descripcion = motor.obtener_descripcion(char)
+	if not descripcion:
+		return None
+	texto_desc = " " + texto_prefijo + formato.format(descripcion) + " "
 	try:
-		motor = _obtenerMotor()
-		modo = config.conf["emoticonosAvanzados"]["modo"]
-		formato = config.conf["emoticonosAvanzados"]["formatoDescripcion"]
-		prefijo = config.conf["emoticonosAvanzados"]["prefijo"]
-		texto_prefijo = prefijo + " " if prefijo else ""
-
-		if modo == MODO_AGRUPADO:
-			nuevo = motor.generar_texto_agrupado(texto, formato=texto_prefijo + formato)
-			return nuevo, None
-
-		resultados = motor.detectar_todo(texto)
-		if not resultados:
-			return texto, None
-
-		# Construir el texto nuevo y el mapa de posiciones.
-		# mapa tiene len(texto)+1 entradas: una por cada posición de carácter
-		# más una para la posición "después del último carácter" (cursor al final).
-		mapa = [0] * (len(texto) + 1)
-		partes = []
-		ultimo = 0
-		pos_nueva = 0
-
-		for item in resultados:
-			# Texto antes del emoji: se copia tal cual, mapeo 1:1
-			segmento_antes = texto[ultimo:item["inicio"]]
-			partes.append(segmento_antes)
-			for k in range(ultimo, item["inicio"]):
-				mapa[k] = pos_nueva
-				pos_nueva += 1
-
-			# Construir el reemplazo del emoji
-			if modo == MODO_ELIMINADO:
-				reemplazo = " "
-			else:
-				descripcion = texto_prefijo + formato.format(item["descripcion"])
-				reemplazo = " " + descripcion + " "
-			partes.append(reemplazo)
-
-			# Calcular dónde termina el reemplazo
-			pos_fin_reemplazo = pos_nueva + len(reemplazo)
-
-			# Las posiciones dentro del emoji saltan al final de la descripción.
-			# Esto hace que el cursor Braille "salte" la descripción completa
-			# y aparezca en el primer carácter después de ella.
-			for k in range(item["inicio"], item["fin"]):
-				mapa[k] = pos_fin_reemplazo
-			pos_nueva = pos_fin_reemplazo
-
-			ultimo = item["fin"]
-
-		# Texto restante después del último emoji
-		segmento_final = texto[ultimo:]
-		partes.append(segmento_final)
-		for k in range(ultimo, len(texto)):
-			mapa[k] = pos_nueva
-			pos_nueva += 1
-		# Posición final (cursor al final del texto)
-		mapa[len(texto)] = pos_nueva
-
-		return "".join(partes), mapa
-	except Exception as e:
-		_log("Error al reemplazar texto para Braille: %s" % str(e), LOG_DEBUG)
-		return texto, None
+		celdas, _, _, _ = louisHelper.translate(
+			[braille.handler.table.fileName, "braille-patterns.cti"],
+			texto_desc,
+		)
+		return celdas
+	except Exception:
+		return None
 
 
-def _parcheado_braille_update(self):
+def _procesarBrailleEmojis(region):
 	"""
-	Versión parcheada de braille.Region.update para mostrar descripciones en Braille.
+	Reemplaza celdas Braille de emojis por las de sus descripciones textuales.
 
-	Intercepta la actualización de regiones Braille para reemplazar
-	emojis Unicode por sus descripciones textuales antes de la
-	traducción a celdas Braille.
+	Sigue el patrón de BrailleExtender: opera DESPUÉS de que Region.update()
+	haya completado la traducción a Braille. No modifica rawText ni ninguna
+	estructura interna de NVDA. Solo reconstruye brailleCells, brailleToRawPos,
+	rawToBraillePos y brailleCursorPos.
 
-	El cursor Braille "salta" las descripciones de emojis: cuando el
-	cursor de edición está sobre un emoji, el cursor Braille se posiciona
-	al final de la descripción en lugar de dentro de ella.
+	:param region: Región Braille ya actualizada por NVDA.
+	:type region: braille.Region
 	"""
+	if not region.rawText or not region.rawText.strip():
+		return
+	if not region.brailleCells:
+		return
+
+	motor = _obtenerMotor()
+	formato = config.conf["emoticonosAvanzados"]["formatoDescripcion"]
+	prefijo = config.conf["emoticonosAvanzados"]["prefijo"]
+	texto_prefijo = prefijo + " " if prefijo else ""
+
+	# Buscar emojis en rawText y preparar reemplazos
+	# Cada reemplazo: (pos_rawText, longitud_emoji, celdas_descripcion)
+	reemplazos = {}
+	resultados = motor.detectar_todo(region.rawText)
+	if not resultados:
+		return
+
+	modo = config.conf["emoticonosAvanzados"]["modo"]
+	for item in resultados:
+		if modo == MODO_ELIMINADO:
+			# En modo eliminado: reemplazar por espacio en braille
+			import louisHelper
+			try:
+				celdas, _, _, _ = louisHelper.translate(
+					[braille.handler.table.fileName, "braille-patterns.cti"],
+					" ",
+				)
+			except Exception:
+				continue
+		else:
+			celdas = _obtenerDescripcionBraille(
+				region.rawText[item["inicio"]:item["fin"]],
+				motor, formato, texto_prefijo,
+			)
+		if celdas is not None:
+			reemplazos[item["inicio"]] = {
+				"fin": item["fin"],
+				"celdas": celdas,
+			}
+
+	if not reemplazos:
+		return
+
+	# Reconstruir las tres estructuras: brailleCells, brailleToRawPos,
+	# rawToBraillePos, siguiendo el patrón de BrailleExtender.
+	nuevosCeldas = []
+	nuevoBrailleToRaw = []
+	nuevoRawToBraille = [0] * len(region.rawText)
+
+	# Iterar por rawText posición a posición
+	i = 0
+	while i < len(region.rawText):
+		if i in reemplazos:
+			# Esta posición es un emoji → reemplazar sus celdas
+			reemplazo = reemplazos[i]
+			celdas_desc = reemplazo["celdas"]
+			fin_emoji = reemplazo["fin"]
+
+			# El rawToBraillePos para todas las posiciones del emoji
+			# apunta al inicio de las celdas de la descripción
+			pos_braille_inicio = len(nuevosCeldas)
+			for k in range(i, fin_emoji):
+				if k < len(nuevoRawToBraille):
+					nuevoRawToBraille[k] = pos_braille_inicio
+
+			# Las celdas de la descripción mapean al primer carácter del emoji
+			nuevosCeldas.extend(celdas_desc)
+			nuevoBrailleToRaw.extend([i] * len(celdas_desc))
+
+			i = fin_emoji
+		else:
+			# Carácter normal → copiar celdas originales
+			if i < len(region.rawToBraillePos):
+				orig_braille_start = region.rawToBraillePos[i]
+				# Encontrar el final de las celdas para este carácter
+				if i + 1 < len(region.rawToBraillePos):
+					orig_braille_end = region.rawToBraillePos[i + 1]
+				else:
+					orig_braille_end = len(region.brailleCells)
+
+				nuevoRawToBraille[i] = len(nuevosCeldas)
+				for bpos in range(orig_braille_start, orig_braille_end):
+					if bpos < len(region.brailleCells):
+						nuevosCeldas.append(region.brailleCells[bpos])
+						nuevoBrailleToRaw.append(i)
+			i += 1
+
+	# Actualizar la región con las nuevas estructuras
+	region.brailleCells = nuevosCeldas
+	region.brailleToRawPos = nuevoBrailleToRaw
+	region.rawToBraillePos = nuevoRawToBraille
+
+	# Recalcular brailleCursorPos a partir de cursorPos y el nuevo mapa
+	if region.cursorPos is not None and region.cursorPos < len(nuevoRawToBraille):
+		region.brailleCursorPos = nuevoRawToBraille[region.cursorPos]
+
+
+
+def _parcheado_region_update(self):
+	"""
+	Versión parcheada de braille.Region.update.
+
+	Llama al método original de NVDA PRIMERO para que complete toda la
+	traducción interna (rawText → brailleCells, mapeos, cursor, selección).
+	Después, si hay emojis activos, reemplaza las celdas Braille de los
+	emojis por las de sus descripciones textuales.
+
+	No modifica rawText, rawTextTypeforms, _rawToContentPos, cursorPos
+	ni selectionStart/End. Solo modifica brailleCells, brailleToRawPos,
+	rawToBraillePos y brailleCursorPos.
+	"""
+	# Ejecutar el update original de NVDA completo
+	_original_region_update(self)
+
+	# Aplicar reemplazos de emojis en Braille si procede
 	try:
 		modo = config.conf["emoticonosAvanzados"]["modo"]
 		mostrar = config.conf["emoticonosAvanzados"]["mostrarEnBraille"]
-		if modo != MODO_DESACTIVADO and mostrar and self.rawText:
-			nuevo_texto, mapa = _reemplazarTextoParaBraille(self.rawText)
-			if nuevo_texto != self.rawText:
-				texto_original_len = len(self.rawText)
-				nuevo_len = len(nuevo_texto)
-				self.rawText = nuevo_texto
-				# Limpiar typeforms ya que el texto ha cambiado de longitud
-				self.rawTextTypeforms = None
-				# Ajustar posición del cursor usando el mapa de posiciones
-				if self.cursorPos is not None:
-					if mapa is not None and self.cursorPos <= texto_original_len:
-						pos_mapeada = mapa[min(self.cursorPos, texto_original_len)]
-					else:
-						pos_mapeada = self.cursorPos
-					# Clampar al rango válido del nuevo texto
-					if nuevo_len > 0:
-						self.cursorPos = max(0, min(pos_mapeada, nuevo_len - 1))
-					else:
-						self.cursorPos = None
-				# Ajustar selección usando el mapa de posiciones
-				if self.selectionStart is not None:
-					if mapa is not None and self.selectionStart <= texto_original_len:
-						pos_s = mapa[min(self.selectionStart, texto_original_len)]
-					else:
-						pos_s = self.selectionStart
-					if nuevo_len > 0:
-						self.selectionStart = max(0, min(pos_s, nuevo_len - 1))
-					else:
-						self.selectionStart = None
-						self.selectionEnd = None
-				if self.selectionEnd is not None:
-					if mapa is not None and self.selectionEnd <= texto_original_len:
-						pos_e = mapa[min(self.selectionEnd, texto_original_len)]
-					else:
-						pos_e = self.selectionEnd
-					if nuevo_len > 0:
-						self.selectionEnd = max(0, min(pos_e, nuevo_len))
-					else:
-						self.selectionEnd = None
+		if modo != MODO_DESACTIVADO and mostrar:
+			_procesarBrailleEmojis(self)
 	except Exception:
 		pass
-	_original_braille_update(self)
 
 
 def _instalarParcheBraille():
 	"""
 	Instala el monkey-patch en braille.Region.update.
 
-	Guarda una referencia al método original y lo reemplaza
-	por la versión parcheada que procesa emoticonos para Braille.
+	Sigue el patrón de BrailleExtender: parchea Region.update para
+	procesar emojis DESPUÉS de la traducción completa de NVDA.
 	"""
-	global _original_braille_update
-	if _original_braille_update is None:
-		_original_braille_update = braille.Region.update
-		braille.Region.update = _parcheado_braille_update
-		_log("Parche de Braille instalado.", LOG_DEBUG)
+	global _original_region_update
+	if _original_region_update is None:
+		_original_region_update = braille.Region.update
+		braille.Region.update = _parcheado_region_update
+		_log("Parche de Braille (Region.update) instalado.", LOG_DEBUG)
 
 
 def _desinstalarParcheBraille():
@@ -511,11 +547,11 @@ def _desinstalarParcheBraille():
 
 	Restaura el método original de actualización de regiones Braille.
 	"""
-	global _original_braille_update
-	if _original_braille_update is not None:
-		braille.Region.update = _original_braille_update
-		_original_braille_update = None
-		_log("Parche de Braille desinstalado.", LOG_DEBUG)
+	global _original_region_update
+	if _original_region_update is not None:
+		braille.Region.update = _original_region_update
+		_original_region_update = None
+		_log("Parche de Braille (Region.update) desinstalado.", LOG_DEBUG)
 
 
 def deshabilitarEnModoSeguro(claseDecorada):

@@ -104,13 +104,13 @@ class MotorEmoticonos:
 
 	def _validar_limites(self, texto, inicio, fin):
 		"""
-		Verifica que un emoticono detectado no esté dentro de una palabra.
+		Verifica que un emoticono detectado no esté dentro de una palabra
+		ni en un contexto de URL u otra secuencia especial.
 
 		Un emoticono es válido solo si:
 		- Está al inicio del texto O el carácter anterior NO es alfanumérico.
 		- Está al final del texto O el carácter siguiente NO es alfanumérico.
-
-		Esto evita falsos positivos como detectar ':P' dentro de 'Explorador'.
+		- No está dentro de una secuencia URL (como http://).
 
 		:param texto: Texto completo.
 		:type texto: str
@@ -128,6 +128,19 @@ class MotorEmoticonos:
 		# Comprobar carácter siguiente
 		if fin < len(texto) and _es_alfanumerico(texto[fin]):
 			return False
+
+		# Comprobar contexto de URL: si el emoticono :/ está seguido de /
+		# o si el emoticono está precedido por ":" + algo que forme ://
+		emoticono = texto[inicio:fin]
+		if emoticono in (":/", ":-/"):
+			# Si hay otro / justo después, es parte de una URL (://)
+			if fin < len(texto) and texto[fin] == "/":
+				return False
+			# Si hay esquema de URL antes (http:, https:, ftp:, etc.)
+			if inicio >= 4:
+				antes = texto[max(0, inicio - 8):inicio].lower()
+				if any(antes.endswith(s) for s in ("http:", "https:", "ftp:", "ftps:", "file:")):
+					return False
 
 		return True
 
@@ -361,3 +374,26 @@ class MotorEmoticonos:
 		:rtype: dict
 		"""
 		return dict(self._traducciones_emojis)
+
+	def obtener_descripcion(self, valor):
+		"""
+		Obtiene la descripción de un emoji o emoticono.
+
+		Busca primero en emojis Unicode y luego en emoticonos manuales.
+
+		:param valor: Emoji Unicode o emoticono clásico.
+		:type valor: str
+		:return: Descripción en español, o None si no se encuentra.
+		:rtype: str | None
+		"""
+		# Buscar en emojis
+		if valor in self._traducciones_emojis:
+			return self._traducciones_emojis[valor]
+		# Buscar en emoticonos manuales
+		if valor in self._emoticonos_manual:
+			return self._emoticonos_manual[valor]
+		if self.ignorar_mayusculas:
+			for clave in self._emoticonos_manual:
+				if clave.lower() == valor.lower():
+					return self._emoticonos_manual[clave]
+		return None

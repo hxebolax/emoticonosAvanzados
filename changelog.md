@@ -1,5 +1,27 @@
 # Registro de cambios
 
+## 1.3.4 (2026-04-19)
+
+### Correcciones
+
+* **Reescrito soporte Braille desde cero**: Nueva implementación inspirada en el patrón de BrailleExtender. Ahora se llama al `Region.update()` original de NVDA PRIMERO, dejando que complete toda su traducción interna. Después, se reemplazan SÓLO las celdas Braille de los emojis por las de sus descripciones, reconstruyendo correctamente las tres estructuras de mapeo (`brailleCells`, `brailleToRawPos`, `rawToBraillePos`) y `brailleCursorPos`. No se modifica `rawText`, `rawTextTypeforms`, `_rawToContentPos`, `cursorPos` ni `selection`.
+* **Corregido conflicto con `(c)` / `©`**: Eliminados `©`, `®` y `™` del diccionario de emojis.
+* **Corregido `:/` en URLs**: Mejorada la validación de límites de emoticonos para contextos URL.
+
+### Mejoras
+
+* Nuevo método `obtener_descripcion()` en `MotorEmoticonos` para búsqueda unificada de descripciones.
+* Función `_construirPatronEmoticono` que centraliza la generación de patrones regex URL-aware.
+* Actualizado `importar_diccionarios.py` para excluir permanentemente `©`, `®` y `™`.
+
+## 1.3.3 (2026-04-19)
+
+*Versión interna — sustituida inmediatamente por 1.3.4.*
+
+## 1.3.2 (2026-04-19)
+
+*Versión interna — sustituida inmediatamente por 1.3.3.*
+
 ## 1.3.1 (2026-04-18)
 
 ### Novedades
